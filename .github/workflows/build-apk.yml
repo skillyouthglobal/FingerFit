@@ -1,0 +1,40 @@
+name: Build FingerFit APK
+
+on:
+  workflow_dispatch:
+  push:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unzip project (if the ZIP was uploaded as-is)
+        run: |
+          if [ -f gradlew ]; then
+            echo "PROJECT_DIR=." >> "$GITHUB_ENV"
+          else
+            unzip -q ./*.zip -d work
+            d=$(dirname "$(find work -name gradlew | head -1)")
+            echo "PROJECT_DIR=$d" >> "$GITHUB_ENV"
+          fi
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Build APK
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon :app:assembleRelease
+          cp app/build/outputs/apk/release/app-release.apk FingerFit.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FingerFit-apk
+          path: ${{ env.PROJECT_DIR }}/FingerFit.apk
