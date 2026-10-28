@@ -7,6 +7,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -38,8 +40,14 @@ jobs:
             echo "APK file not found" && exit 1
           fi
 
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+      - name: Create Automatic Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: FingerFit-apk
-          path: FingerFit.apk
+          files: FingerFit.apk
+          tag_name: v1.0.${{ github.run_number }}
+          name: FingerFit App v1.0.${{ github.run_number }}
+          body: |
+            FingerFit অ্যাপের নতুন আপডেট। 
+            নিচের FingerFit.apk ফাইলে ক্লিক করে সরাসরি ডাউনলোড করে ইনস্টল করুন।
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
