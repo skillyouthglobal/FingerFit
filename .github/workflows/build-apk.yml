@@ -15,7 +15,7 @@ jobs:
           if [ -f gradlew ]; then
             echo "PROJECT_DIR=." >> "$GITHUB_ENV"
           else
-            unzip -q ./*.zip -d work
+            unzip -q ./FingerFit-project3.zip -d work
             d=$(dirname "$(find work -name gradlew | head -1)")
             echo "PROJECT_DIR=$d" >> "$GITHUB_ENV"
           fi
@@ -31,8 +31,8 @@ jobs:
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
           chmod +x gradlew
-          ./gradlew --no-daemon :app:assembleRelease
-          cp app/build/outputs/apk/release/app-release.apk FingerFit.apk
+          ./gradlew --no-daemon :app:assembleDebug
+          cp app/build/outputs/apk/debug/app-debug.apk FingerFit.apk
 
       - uses: actions/upload-artifact@v4
         with:
