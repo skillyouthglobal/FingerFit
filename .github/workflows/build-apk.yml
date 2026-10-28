@@ -16,33 +16,18 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
-
       - name: Unzip project
         run: |
           mkdir -p work
           unzip -o ./FingerFit-project3.zip -d work
-          BUILD_FILE=$(find work -name "build.gradle*" | head -n 1)
-          if [ -n "$BUILD_FILE" ]; then
-            TARGET_DIR=$(dirname "$BUILD_FILE")
-            echo "PROJECT_DIR=$TARGET_DIR" >> "$GITHUB_ENV"
-          else
-            echo "PROJECT_DIR=work" >> "$GITHUB_ENV"
-          fi
+          d=$(dirname "$(find work -name gradlew | head -1)")
+          echo "PROJECT_DIR=$d" >> "$GITHUB_ENV"
 
-      - name: Build APK
+      - name: Build APK with Gradle
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          if [ -f gradlew ]; then
-            chmod +x gradlew
-            ./gradlew assembleDebug --no-daemon
-          else
-            gradle assembleDebug
-          fi
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
 
       - name: Find and Copy APK
         run: |
@@ -50,7 +35,7 @@ jobs:
           if [ -n "$APK_PATH" ]; then
             cp "$APK_PATH" FingerFit.apk
           else
-            echo "APK output file not found" && exit 1
+            echo "APK file not found" && exit 1
           fi
 
       - name: Upload Artifact
