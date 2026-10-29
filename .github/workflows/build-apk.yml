@@ -1,4 +1,4 @@
-name: Build FingerFit APK
+name: Build Kinetro APK
 
 on:
   workflow_dispatch:
@@ -21,7 +21,9 @@ jobs:
       - name: Unzip project
         run: |
           mkdir -p work
-          unzip -o ./FingerFit-project3.zip -d work
+          ZIP=$(ls FingerFit-project*.zip | sort -V | tail -n 1)
+          echo "Using $ZIP"
+          unzip -o "./$ZIP" -d work
           d=$(dirname "$(find work -name gradlew | head -1)")
           echo "PROJECT_DIR=$d" >> "$GITHUB_ENV"
 
@@ -35,7 +37,7 @@ jobs:
         run: |
           APK_PATH=$(find work -name "*.apk" | head -n 1)
           if [ -n "$APK_PATH" ]; then
-            cp "$APK_PATH" FingerFit.apk
+            cp "$APK_PATH" Kinetro.apk
           else
             echo "APK file not found" && exit 1
           fi
@@ -44,18 +46,18 @@ jobs:
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: FingerFit-apk
-          path: FingerFit.apk
+          name: Kinetro-apk
+          path: Kinetro.apk
 
       # ২. রিলিজ পেজে সবার জন্য সরাসরি APK ফাইল পাবলিশের ব্যবস্থা
       - name: Create Automatic Release
         uses: softprops/action-gh-release@v2
         with:
-          files: FingerFit.apk
+          files: Kinetro.apk
           tag_name: v1.0.${{ github.run_number }}
-          name: FingerFit App v1.0.${{ github.run_number }}
+          name: Kinetro App v1.0.${{ github.run_number }}
           body: |
-            FingerFit অ্যাপের নতুন আপডেট। 
-            নিচের FingerFit.apk ফাইলে ক্লিক করে সরাসরি ডাউনলোড করে ইনস্টল করুন।
+            Kinetro অ্যাপের নতুন আপডেট। 
+            নিচের Kinetro.apk ফাইলে ক্লিক করে সরাসরি ডাউনলোড করে ইনস্টল করুন।
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
