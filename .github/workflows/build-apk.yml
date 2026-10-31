@@ -42,22 +42,25 @@ jobs:
             echo "APK file not found" && exit 1
           fi
 
-      # ১. অ্যাকশনস পেজে আগের মতো ZIP ডাউনলোড করার ব্যবস্থা
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: Kinetro-apk
           path: Kinetro.apk
 
-      # ২. রিলিজ পেজে সবার জন্য সরাসরি APK ফাইল পাবলিশের ব্যবস্থা
       - name: Create Automatic Release
         uses: softprops/action-gh-release@v2
         with:
           files: Kinetro.apk
           tag_name: v1.0.${{ github.run_number }}
           name: Kinetro App v1.0.${{ github.run_number }}
+          make_latest: true
           body: |
-            Kinetro অ্যাপের নতুন আপডেট। 
-            নিচের Kinetro.apk ফাইলে ক্লিক করে সরাসরি ডাউনলোড করে ইনস্টল করুন।
+            ## Kinetro – Fitness & Longevity
+
+            ### সরাসরি ডাউনলোড (এখানে ক্লিক করুন)
+            [Kinetro.apk ডাউনলোড করুন](https://github.com/${{ github.repository }}/releases/latest/download/Kinetro.apk)
+
+            ডাউনলোড হলে ফাইলটি খুলে ইনস্টল করুন। (প্রয়োজনে ফোনের "Unknown sources / এই উৎস থেকে ইনস্টল" অনুমতি দিন।)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
