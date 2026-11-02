@@ -1,4 +1,4 @@
-name: Build Kinetro APK
+name: Build Kinetro APK and AAB
 
 on:
   workflow_dispatch:
@@ -18,49 +18,66 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Unzip project
+      - name: Unzip the newest project ZIP
         run: |
-          mkdir -p work
-          ZIP=$(ls FingerFit-project*.zip | sort -V | tail -n 1)
+          ZIP=$(ls FingerFit-project*.zip 2>/dev/null | sort -V | tail -n 1)
+          if [ -z "$ZIP" ]; then echo "No FingerFit-project*.zip found" && exit 1; fi
           echo "Using $ZIP"
+          rm -rf work
+          mkdir -p work
           unzip -o "./$ZIP" -d work
           d=$(dirname "$(find work -name gradlew | head -1)")
           echo "PROJECT_DIR=$d" >> "$GITHUB_ENV"
 
-      - name: Build APK with Gradle
+      - name: Build APK (for installing on phones)
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug -PversionCode=${{ github.run_number }} --no-daemon
 
-      - name: Find and Copy APK
+      - name: Build AAB (for Play Store upload)
+        id: aab
+        continue-on-error: true
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: ./gradlew bundleRelease -PversionCode=${{ github.run_number }} --no-daemon
+
+      - name: Collect files
         run: |
-          APK_PATH=$(find work -name "*.apk" | head -n 1)
-          if [ -n "$APK_PATH" ]; then
-            cp "$APK_PATH" Kinetro.apk
-          else
-            echo "APK file not found" && exit 1
-          fi
+          APK_PATH=$(find work -path "*outputs/apk/debug/*.apk" | head -n 1)
+          if [ -z "$APK_PATH" ]; then echo "APK file not found" && exit 1; fi
+          cp "$APK_PATH" Kinetro.apk
+          AAB_PATH=$(find work -path "*outputs/bundle/release/*.aab" | head -n 1)
+          if [ -n "$AAB_PATH" ]; then cp "$AAB_PATH" Kinetro.aab; else echo "AAB not built"; fi
+          ls -la Kinetro.*
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Kinetro-apk
-          path: Kinetro.apk
+          name: Kinetro-files
+          path: |
+            Kinetro.apk
+            Kinetro.aab
 
       - name: Create Automatic Release
         uses: softprops/action-gh-release@v2
         with:
-          files: Kinetro.apk
+          files: |
+            Kinetro.apk
+            Kinetro.aab
           tag_name: v1.0.${{ github.run_number }}
           name: Kinetro App v1.0.${{ github.run_number }}
           make_latest: true
           body: |
             ## Kinetro – Fitness & Longevity
 
-            ### সরাসরি ডাউনলোড (এখানে ক্লিক করুন)
+            ### ফোনে ইনস্টলের জন্য (APK)
             [Kinetro.apk ডাউনলোড করুন](https://github.com/${{ github.repository }}/releases/latest/download/Kinetro.apk)
 
             ডাউনলোড হলে ফাইলটি খুলে ইনস্টল করুন। (প্রয়োজনে ফোনের "Unknown sources / এই উৎস থেকে ইনস্টল" অনুমতি দিন।)
+
+            ### Play Store-এ আপলোডের জন্য (AAB)
+            [Kinetro.aab ডাউনলোড করুন](https://github.com/${{ github.repository }}/releases/latest/download/Kinetro.aab)
+
+            AAB ফাইল ফোনে ইনস্টল হয় না। এটি শুধু Google Play Console-এ আপলোডের জন্য।
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
