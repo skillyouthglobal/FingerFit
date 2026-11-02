@@ -31,7 +31,7 @@ jobs:
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
+          ./gradlew assembleDebug -PversionCode=${{ github.run_number }} --no-daemon
 
       - name: Find and Copy APK
         run: |
