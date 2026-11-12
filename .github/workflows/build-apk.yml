@@ -1,15 +1,16 @@
-name: Kinetro APK Diagnostic Build
+name: Build Kinetro APK and AAB (Final)
 
 on:
   workflow_dispatch:
+  push:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
 
     steps:
       - name: Checkout repository
@@ -21,26 +22,38 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Extract project ZIP
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Extract original project ZIP
+        id: extract
         shell: bash
         run: |
           set -euo pipefail
 
-          ZIP="$(find . -maxdepth 1 -type f \
+          ZIP="$(find "$GITHUB_WORKSPACE" -maxdepth 1 -type f \
             -name 'FingerFit-project*.zip' \
+            ! -name '*diagnostic*.zip' \
             -printf '%f\n' | sort -V | tail -n 1)"
 
           if [ -z "$ZIP" ]; then
-            echo "::error::Project ZIP not found."
+            echo "::error::Original project ZIP not found."
             exit 1
           fi
 
-          echo "Using ZIP: $ZIP"
+          BUILD_ROOT="$RUNNER_TEMP/kinetro-build"
+          mkdir -p "$BUILD_ROOT/project"
 
-          mkdir -p work
-          unzip -q -o "./$ZIP" -d work
+          echo "Using project: $ZIP"
+          unzip -q "$GITHUB_WORKSPACE/$ZIP" -d "$BUILD_ROOT/project"
 
-          GRADLEW_PATH="$(find work -type f \
+          GRADLEW_PATH="$(find "$BUILD_ROOT/project" -type f \
             -name gradlew -print -quit)"
 
           if [ -z "$GRADLEW_PATH" ]; then
@@ -51,24 +64,44 @@ jobs:
           PROJECT_DIR="$(dirname "$GRADLEW_PATH")"
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
 
           echo "Project directory: $PROJECT_DIR"
-          ls -la "$PROJECT_DIR"
 
-      - name: Configure Gradle network timeout
+      - name: Increase Gradle network timeout
+        if: steps.extract.outcome == 'success'
         shell: bash
         run: |
           set -euo pipefail
 
           WRAPPER_FILE="$PROJECT_DIR/gradle/wrapper/gradle-wrapper.properties"
 
-          if [ -f "$WRAPPER_FILE" ]; then
-            if grep -q '^networkTimeout=' "$WRAPPER_FILE"; then
-              sed -i 's/^networkTimeout=.*/networkTimeout=120000/' "$WRAPPER_FILE"
-            else
-              echo 'networkTimeout=120000' >> "$WRAPPER_FILE"
-            fi
+          if [ ! -f "$WRAPPER_FILE" ]; then
+            echo "::error::Gradle wrapper properties missing."
+            exit 1
           fi
+
+          python3 - "$WRAPPER_FILE" <<'PY'
+          from pathlib import Path
+          import re
+          import sys
+
+          path = Path(sys.argv[1])
+          content = path.read_text(encoding="utf-8")
+
+          if re.search(r"(?m)^networkTimeout=.*$", content):
+              content = re.sub(
+                  r"(?m)^networkTimeout=.*$",
+                  "networkTimeout=120000",
+                  content,
+                  count=1
+              )
+          else:
+              content = content.rstrip() + "\nnetworkTimeout=120000\n"
+
+          path.write_text(content, encoding="utf-8")
+          print("Gradle network timeout configured.")
+          PY
 
       - name: Cache Gradle
         uses: actions/cache@v4
@@ -76,24 +109,84 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/gradle-wrapper.properties') }}
+          key: ${{ runner.os }}-gradle-${{ hashFiles('FingerFit-project*.zip') }}
           restore-keys: |
             ${{ runner.os }}-gradle-
 
+      - name: Download MediaPipe AI models
+        id: models
+        if: steps.extract.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ASSET_DIR="$PROJECT_DIR/app/src/main/assets"
+          mkdir -p "$ASSET_DIR"
+
+          download_model() {
+            local url="$1"
+            local destination="$2"
+            local size=0
+
+            if [ -f "$destination" ]; then
+              size="$(stat -c %s "$destination")"
+            fi
+
+            if [ ! -f "$destination" ] || [ "$size" -lt 1000000 ]; then
+              rm -f "$destination"
+
+              echo "Downloading $(basename "$destination")"
+
+              curl --fail --location --silent --show-error \
+                --retry 5 --retry-all-errors --retry-delay 5 \
+                --connect-timeout 30 --max-time 300 \
+                "$url" --output "$destination"
+            else
+              echo "Existing model is valid: $destination"
+            fi
+
+            size="$(stat -c %s "$destination")"
+
+            if [ "$size" -lt 1000000 ]; then
+              echo "::error::Model download incomplete."
+              return 1
+            fi
+
+            echo "Verified $(basename "$destination"): $size bytes"
+          }
+
+          {
+            download_model \
+              "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task" \
+              "$ASSET_DIR/hand_landmarker.task"
+
+            download_model \
+              "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task" \
+              "$ASSET_DIR/pose_landmarker_lite.task"
+
+          } 2>&1 | tee "$GITHUB_WORKSPACE/model-download.log"
+
       - name: Check Java and Gradle
+        id: versions
+        if: steps.models.outcome == 'success'
         shell: bash
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
           set -euo pipefail
+
           java -version 2>&1 | tee "$GITHUB_WORKSPACE/java-version.log"
+
           chmod +x gradlew
+
           ./gradlew --version 2>&1 | tee "$GITHUB_WORKSPACE/gradle-version.log"
 
-      - name: Build APK with detailed diagnostics
+      - name: Build APK for Android phones
         id: apk
+        if: steps.versions.outcome == 'success'
         shell: bash
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
+          set -euo pipefail
           set -o pipefail
 
           ./gradlew assembleDebug \
@@ -104,41 +197,123 @@ jobs:
             --console=plain \
             2>&1 | tee "$GITHUB_WORKSPACE/apk-build.log"
 
+      - name: Build AAB for Play Console
+        id: aab
+        if: steps.apk.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          set -euo pipefail
+          set -o pipefail
+
+          ./gradlew bundleRelease \
+            -PversionCode=${{ github.run_number }} \
+            --no-daemon \
+            --stacktrace \
+            --info \
+            --console=plain \
+            2>&1 | tee "$GITHUB_WORKSPACE/aab-build.log"
+
       - name: Upload diagnostic logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: Kinetro-Diagnostics-${{ github.run_number }}
           path: |
+            model-download.log
             java-version.log
             gradle-version.log
             apk-build.log
-            work/**/build/reports/problems/**
+            aab-build.log
+            ${{ env.PROJECT_DIR }}/app/build/reports/problems/**
           if-no-files-found: warn
           retention-days: 14
 
-      - name: Collect APK
-        if: success()
+      - name: Collect APK and AAB
+        id: collect
+        if: always()
         shell: bash
         run: |
           set -euo pipefail
 
-          APK_PATH="$(find work -type f \
-            -path '*/outputs/apk/debug/*.apk' \
-            -print -quit)"
+          APK_PATH=""
+          AAB_PATH=""
 
-          if [ -z "$APK_PATH" ]; then
-            echo "::error::APK not found."
-            exit 1
+          if [ -n "${PROJECT_DIR:-}" ] && [ -d "$PROJECT_DIR" ]; then
+            APK_PATH="$(find "$PROJECT_DIR" -type f \
+              -path '*/outputs/apk/debug/*.apk' -print -quit || true)"
+
+            AAB_PATH="$(find "$PROJECT_DIR" -type f \
+              -path '*/outputs/bundle/release/*.aab' -print -quit || true)"
           fi
 
-          cp "$APK_PATH" Kinetro.apk
-          ls -lh Kinetro.apk
+          if [ -n "$APK_PATH" ]; then
+            cp "$APK_PATH" "$GITHUB_WORKSPACE/Kinetro.apk"
+            echo "apk_exists=true" >> "$GITHUB_OUTPUT"
+            echo "APK collected."
+          else
+            echo "apk_exists=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::APK was not generated."
+          fi
 
-      - name: Upload APK Artifact
-        if: success()
+          if [ -n "$AAB_PATH" ]; then
+            cp "$AAB_PATH" "$GITHUB_WORKSPACE/Kinetro.aab"
+            echo "aab_exists=true" >> "$GITHUB_OUTPUT"
+            echo "AAB collected."
+          else
+            echo "aab_exists=false" >> "$GITHUB_OUTPUT"
+            echo "AAB unavailable; APK can still be released."
+          fi
+
+          ls -lh "$GITHUB_WORKSPACE"/Kinetro.* 2>/dev/null || true
+
+      - name: Upload APK and AAB artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Kinetro-Debug-APK
-          path: Kinetro.apk
-          retention-days: 14
+          name: Kinetro-files-${{ github.run_number }}
+          path: |
+            Kinetro.apk
+            Kinetro.aab
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Create Automatic Release with APK and AAB
+        if: steps.collect.outputs.apk_exists == 'true' && steps.collect.outputs.aab_exists == 'true'
+        uses: softprops/action-gh-release@v3
+        with:
+          files: |
+            Kinetro.apk
+            Kinetro.aab
+          fail_on_unmatched_files: true
+          tag_name: v1.0.${{ github.run_number }}
+          name: Kinetro App v1.0.${{ github.run_number }}
+          make_latest: true
+          body: |
+            ## Kinetro – Fitness & Longevity
+
+            ### Android Installation (APK)
+            [Download Kinetro.apk](https://github.com/${{ github.repository }}/releases/latest/download/Kinetro.apk)
+
+            ### Google Play Console (AAB)
+            [Download Kinetro.aab](https://github.com/${{ github.repository }}/releases/latest/download/Kinetro.aab)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create Automatic Release with APK only
+        if: steps.collect.outputs.apk_exists == 'true' && steps.collect.outputs.aab_exists != 'true'
+        uses: softprops/action-gh-release@v3
+        with:
+          files: Kinetro.apk
+          fail_on_unmatched_files: true
+          tag_name: v1.0.${{ github.run_number }}
+          name: Kinetro App v1.0.${{ github.run_number }}
+          make_latest: true
+          body: |
+            ## Kinetro – Fitness & Longevity
+
+            APK is available for Android installation.
+            AAB was not generated. Check the diagnostic artifact.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
