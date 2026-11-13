@@ -179,12 +179,11 @@ jobs:
             ### ফোনে ইনস্টলের জন্য (APK)
             [Kinetro.apk ডাউনলোড করুন](https://github.com/${{ github.repository }}/releases/latest/download/Kinetro.apk)
 
-            ডাউনলোড হলে ফাইলটি খুলে ইনস্টল করুন। (প্রয়োজনে ফোনের "Unknown sources / এই উৎস থেকে ইনস্টল" অনুমতি দিন।)
+            ডাউনলোড হলে ফাইলটি খুলে ইনস্টল করুন। (প্রয়োজনে ফোনের "Unknown sources / এই উৎস থেকে ইনস্টল" অনুমতি দিন।)
 
             ### Play Store-এ আপলোডের জন্য (AAB)
             [Kinetro.aab ডাউনলোড করুন](https://github.com/${{ github.repository }}/releases/latest/download/Kinetro.aab)
 
-            AAB ফাইল ফোনে ইনস্টল হয় না। এটি শুধু Google Play Console-এ আপলোডের জন্য।
+            AAB ফাইল ফোনে ইনস্টল হয় না। এটি শুধু Google Play Console-এ আপলোডের জন্য।
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
