@@ -155,21 +155,25 @@ jobs:
 
           ls -lh Kinetro.*
 
-      - name: Upload Artifact
+      - name: Upload APK (phones)
         uses: actions/upload-artifact@v4
         with:
-          name: Kinetro-files
-          path: |
-            Kinetro.apk
-            Kinetro.aab
+          name: Kinetro-APK
+          path: Kinetro.apk
           if-no-files-found: warn
+
+      - name: Upload AAB (Play Store, kept only 3 days, never published)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kinetro-PlayStore-AAB
+          path: Kinetro.aab
+          retention-days: 3
+          if-no-files-found: ignore
 
       - name: Create Automatic Release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            Kinetro.apk
-            Kinetro.aab
+          files: Kinetro.apk
           tag_name: v1.0.${{ github.run_number }}
           name: Kinetro App v1.0.${{ github.run_number }}
           make_latest: true
@@ -180,10 +184,6 @@ jobs:
             [Kinetro.apk ডাউনলোড করুন](https://github.com/${{ github.repository }}/releases/latest/download/Kinetro.apk)
 
             ডাউনলোড হলে ফাইলটি খুলে ইনস্টল করুন। (প্রয়োজনে ফোনের "Unknown sources / এই উৎস থেকে ইনস্টল" অনুমতি দিন।)
-
-            ### Play Store-এ আপলোডের জন্য (AAB)
-            [Kinetro.aab ডাউনলোড করুন](https://github.com/${{ github.repository }}/releases/latest/download/Kinetro.aab)
-
-            AAB ফাইল ফোনে ইনস্টল হয় না। এটি শুধু Google Play Console-এ আপলোডের জন্য।
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
